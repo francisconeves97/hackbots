@@ -1,0 +1,16 @@
+{
+  "name": "hackbots",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^1.0.5",
+    "ai": "^5.0.10"
+  }
+}
