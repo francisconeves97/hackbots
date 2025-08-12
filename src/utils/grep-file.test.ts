@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { grepFile, GrepError } from "./grep-file";
+import { grepFile, GrepError, extractFromGrepMatch } from "./grep-file";
 import { writeFile, mkdir, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -160,7 +160,7 @@ describe("grepFile", () => {
     }
   });
 
-  it("should include column information in matches", async () => {
+  it("should include location information in matches", async () => {
     const result = await grepFile({
       pattern: "Hello",
       path: testDir,
@@ -172,6 +172,15 @@ describe("grepFile", () => {
       if (firstMatch) {
         expect(firstMatch.column).toBeDefined();
         expect(typeof firstMatch.column).toBe("number");
+        expect(firstMatch.location).toBeDefined();
+        expect(firstMatch.location?.startPosition).toBeDefined();
+        expect(firstMatch.location?.endPosition).toBeDefined();
+        expect(firstMatch.location?.startPosition.line).toBe(
+          firstMatch.lineNumber
+        );
+        expect(firstMatch.location?.endPosition.line).toBe(
+          firstMatch.lineNumber
+        );
       }
     }
   });
@@ -228,6 +237,45 @@ describe("grepFile", () => {
     if (result.success) {
       // Should find no matches because file1.txt contains "Hello" (capitalized) not "hello"
       expect(result.data.length).toBe(0);
+    }
+  });
+
+  it("should extract content from grep match location", async () => {
+    const result = await grepFile({
+      pattern: "Hello",
+      path: join(testDir, "file1.txt"),
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success && result.data.length > 0) {
+      const match = result.data[0];
+      if (match) {
+        const extractedContent = await extractFromGrepMatch(match);
+        expect(extractedContent).toBe("Hello");
+      }
+    }
+  });
+
+  it("should handle multi-line location extraction", async () => {
+    // Create a file with multi-line content
+    await writeFile(
+      join(testDir, "multiline.txt"),
+      "Line 1\nLine 2\nLine 3\nLine 4"
+    );
+
+    const result = await grepFile({
+      pattern: "Line",
+      path: join(testDir, "multiline.txt"),
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success && result.data.length > 0) {
+      const match = result.data[0];
+      if (match) {
+        // Test extracting from a specific location
+        const extractedContent = await extractFromGrepMatch(match);
+        expect(extractedContent).toBe("Line"); // Should extract just the matched text
+      }
     }
   });
 });
