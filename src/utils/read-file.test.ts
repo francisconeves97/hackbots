@@ -1,6 +1,6 @@
-import { describe, it, expect } from "bun:test";
-import { readFile, FileError } from "./read-file";
+import { describe, expect, it } from "bun:test";
 import { join } from "path";
+import { FileError, readFile } from "./read-file";
 
 describe("readFile", () => {
   const testFilePath = join(import.meta.dir, "test", "example_file.txt");

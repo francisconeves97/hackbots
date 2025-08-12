@@ -2,6 +2,7 @@ import type { Position } from "../types";
 
 export type DescriptorWithCodeLocation = {
   descriptorType: string;
+  filePath: string;
   value: string;
   startPosition: Position;
   endPosition: Position;

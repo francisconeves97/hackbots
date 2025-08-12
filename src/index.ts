@@ -1,97 +1,143 @@
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { stepCountIs, streamText } from "ai";
-import { parseArgs } from "util";
-import { getOnMessageListeners } from "./services/get-onmessage-listeners";
-import { readFileTool } from "./tools/read-file";
-import { grepFileTool } from "./tools/grep-file";
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { trace } from "console";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { NodeSDK } from "@opentelemetry/sdk-node";
 import { LangfuseExporter } from "langfuse-vercel";
+import { parseArgs } from "util";
+import {
+  onMessageAgent,
+  type OnMessageAgentContext,
+} from "./agents/onmessage-agent";
+import { getModel } from "./providers";
+import type { AgentContext } from "./types";
+import { logger, type LogLevel } from "./utils/logger";
 
-const sdk = new NodeSDK({
-  traceExporter: new LangfuseExporter({
-    baseUrl: "http://localhost:3000",
-    publicKey: "pk-lf-a67112a2-ea8c-48ac-8de2-3b5284e0b828",
-    secretKey: "sk-lf-6dc31c5a-ade2-4a16-aaf0-01f1c17fcc19",
-  }),
-  instrumentations: [getNodeAutoInstrumentations()],
-});
+const telemetryMiddleware = async (
+  telemetryEnabled: boolean,
+  func: () => Promise<any>
+) => {
+  if (!telemetryEnabled) {
+    return func();
+  }
 
-sdk.start();
+  const baseUrl = Bun.env.LANGFUSE_BASE_URL;
+  const publicKey = Bun.env.LANGFUSE_PUBLIC_KEY;
+  const secretKey = Bun.env.LANGFUSE_SECRET_KEY;
 
-const { values } = parseArgs({
-  args: Bun.argv,
-  options: {
-    "file-path": {
-      type: "string",
+  const sdk = new NodeSDK({
+    traceExporter: new LangfuseExporter({
+      baseUrl,
+      publicKey,
+      secretKey,
+    }),
+    instrumentations: [getNodeAutoInstrumentations()],
+  });
+  sdk.start();
+
+  await func();
+
+  await sdk.shutdown();
+};
+
+type CLIArgs = {
+  filePath: string;
+  enableTelemetry: boolean;
+  provider: string;
+  model: string;
+  agent: string;
+  logLevel: LogLevel;
+};
+
+const parseAndValidateCLIArgs = (): CLIArgs => {
+  const { values } = parseArgs({
+    args: Bun.argv,
+    options: {
+      "file-path": {
+        type: "string",
+      },
+      "enable-telemetry": {
+        type: "boolean",
+        default: false,
+      },
+      provider: {
+        type: "string",
+        default: "lmstudio",
+      },
+      model: {
+        type: "string",
+        default: "openai/gpt-oss-20b",
+      },
+      agent: {
+        type: "string",
+      },
+      "log-level": {
+        type: "string",
+        default: "info",
+      },
     },
-  },
-  strict: true,
-  allowPositionals: true,
-});
-
-if (!values["file-path"]) {
-  console.error("Missing required argument: --file-path");
-  process.exit(1);
-}
-
-const filePath = values["file-path"];
-
-const descriptors = await getOnMessageListeners(filePath);
-if (!descriptors.success) {
-  console.error(descriptors.error);
-  process.exit(1);
-}
-
-const lmstudio = createOpenAICompatible({
-  name: "lmstudio",
-  baseURL: "http://localhost:1234/v1",
-});
-
-const model = lmstudio("openai/gpt-oss-20b");
-
-for (const descriptor of descriptors.data) {
-  console.log("\nAnalyzing onmessage listener\n\n", descriptor);
-
-  const { textStream } = streamText({
-    model,
-    prompt: `
-        You're an expert security researcher specialized in analyzing client side JavaScript code.
-      
-        Your task is to review onmessage listeners for potential XSS vulnerabilities or interesting gadgets.
-
-        You are given a code location on a file and you have access to tools to read file contents and grep for patterns.
-        You should use that to understand the logic of the onmessage listener.
-
-        You SHOULD use the tools to understand the logic of the onmessage listener if you don't have that context.
-
-        Interesting onmessage listeners have the following characteristics:
-        - They are NOT part of a generic polifyll or framework
-        - They are bound to the window object and are not a channel port
-        - They have no origin check or have an origin check that could be bypassed by a cross domain
-        - They have interesting logic that could be used to exploit the application
-        - If the passed data is not sanitized and is sent to a sink (e.g. window.location, or innerHTML) then they are SUPER interesting
-      
-        Analyze the following onmessage listener:
-        ${JSON.stringify(descriptor, null, 2)}
-
-        If it doesn't look interesting, simply give a very small explanation, no need to go into detail. You are part of a pipeline to detect security
-        vulnerabilities, so you should be concise and to the point.
-        `,
-    tools: {
-      readFileTool,
-      grepFileTool,
-    },
-    experimental_telemetry: {
-      isEnabled: true,
-    },
-    stopWhen: stepCountIs(5),
+    strict: true,
+    allowPositionals: true,
   });
 
-  for await (const textPart of textStream) {
-    process.stdout.write(textPart);
+  if (!values["file-path"]) {
+    throw new Error("Missing required argument: --file-path");
   }
-}
 
-await sdk.shutdown();
+  if (
+    !["none", "debug", "info", "warn", "error"].includes(values["log-level"])
+  ) {
+    throw new Error(
+      "Invalid log level. Must be one of: none, debug, info, warn, error"
+    );
+  }
+
+  return {
+    filePath: values["file-path"],
+    enableTelemetry: values["enable-telemetry"],
+    provider: values["provider"],
+    model: values["model"],
+    agent: values["agent"] || "",
+    logLevel: values["log-level"] as LogLevel,
+  };
+};
+
+const main = async () => {
+  const args = parseAndValidateCLIArgs();
+
+  await telemetryMiddleware(args.enableTelemetry, async () => {
+    const model = getModel(args.provider, args.model);
+
+    const context: AgentContext = {
+      telemetryEnabled: args.enableTelemetry,
+      model,
+      logger: logger(args.logLevel),
+      agentContext: undefined,
+    };
+
+    switch (args.agent) {
+      case "onmessage":
+        const onMessageAgentContext: AgentContext<OnMessageAgentContext> = {
+          ...context,
+          agentContext: {
+            filePath: args.filePath,
+            maxIterations: parseInt(
+              Bun.env.ONMESSAGE_AGENT_MAX_ITERATIONS || "5"
+            ),
+          },
+        };
+        const result = await onMessageAgent(onMessageAgentContext);
+
+        if (!result.success) {
+          throw new Error(result.error);
+        }
+
+        console.log(result.data);
+        break;
+      default:
+        throw new Error(`Unknown agent: ${args.agent}`);
+    }
+  });
+};
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -1,6 +1,6 @@
-import { z } from "zod";
-import { generateText, stepCountIs, streamText, tool } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { stepCountIs, streamText, tool } from "ai";
+import { z } from "zod";
 
 const lmstudio = createOpenAICompatible({
   name: "lmstudio",

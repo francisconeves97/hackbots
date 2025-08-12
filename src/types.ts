@@ -1,3 +1,6 @@
+import type { LanguageModel } from "ai";
+import type { Logger } from "./utils/logger";
+
 export type Position = {
   line: number;
   column: number;
@@ -8,4 +11,11 @@ export type GrepMatch = {
   lineNumber: number;
   line: string;
   column?: number;
+};
+
+export type AgentContext<AgentSpecificContext = undefined> = {
+  telemetryEnabled: boolean;
+  model: LanguageModel;
+  logger: Logger;
+  agentContext: AgentSpecificContext;
 };

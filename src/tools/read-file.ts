@@ -1,6 +1,5 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { GrepError, grepFile } from "../utils/grep-file";
 import { readFile } from "../utils/read-file";
 
 const readFileTool = tool({

@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { grepFile, GrepError, extractFromGrepMatch } from "./grep-file";
-import { writeFile, mkdir, rm } from "fs/promises";
-import { join } from "path";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { mkdir, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
+import { join } from "path";
+import { GrepError, extractFromGrepMatch, grepFile } from "./grep-file";
 
 describe("grepFile", () => {
   let testDir: string;

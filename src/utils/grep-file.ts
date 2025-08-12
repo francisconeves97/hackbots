@@ -1,6 +1,5 @@
 import { stat } from "fs/promises";
 import { glob } from "glob";
-import { spawn } from "child_process";
 import type { Position } from "../types";
 
 export enum GrepError {
