@@ -1,20 +1,22 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { getOnMessageListeners } from "../services/get-onmessage-listeners";
+import { grepFile } from "../utils/grep-file";
 
-const getOnmessageListeners = tool({
+const grepFileTool = tool({
   description:
-    "Searches for a regular expression pattern within the content of a file Returns the lines containing matches along with their line numbers.",
+    "Searches for a regular expression pattern within the content of a file. Returns the lines containing matches along with their line numbers.",
   inputSchema: z.object({
-    filePath: z
+    pattern: z
       .string()
       .describe(
-        "The absolute path to the file to get the onmessage listeners for"
+        "The regular expression (regex) pattern to search for within file contents (e.g., 'function\\s+myFunction', 'import\\s+\\{.*\\}\\s+from\\s+.*')."
       ),
+    filePath: z.string().describe("The absolute path to the file to search."),
   }),
-  execute: async ({ filePath }) => {
-    return await getOnMessageListeners(filePath);
+  execute: async ({ pattern, filePath }) => {
+    const result = await grepFile({ pattern, path: filePath });
+    return result;
   },
 });
 
-export { getOnmessageListeners };
+export { grepFileTool };

@@ -91,6 +91,118 @@ describe("readFile", () => {
         expect(lines[1]).toBe("This is the second line with some content.");
       }
     });
+
+    it("should read a single line when only startPosition is provided", async () => {
+      const result = await readFile({
+        filePath: testFilePath,
+        location: {
+          startPosition: { line: 3, column: 1 },
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toBe(
+          "This is the third line that contains more text."
+        );
+      }
+    });
+
+    it("should read a single line with partial column range when only startPosition is provided", async () => {
+      const result = await readFile({
+        filePath: testFilePath,
+        location: {
+          startPosition: { line: 2, column: 10 },
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toBe("he second line with some content.");
+      }
+    });
+
+    it("should read multiple lines using linesToRead parameter", async () => {
+      const result = await readFile({
+        filePath: testFilePath,
+        location: {
+          startPosition: { line: 2, column: 1 },
+          linesToRead: 3,
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        const lines = result.data.split("\n");
+        expect(lines).toHaveLength(3);
+        expect(lines[0]).toBe("This is the second line with some content.");
+        expect(lines[1]).toBe(
+          "This is the third line that contains more text."
+        );
+        expect(lines[2]).toBe(
+          "This is the fourth line with different content."
+        );
+      }
+    });
+
+    it("should read multiple lines with partial start column using linesToRead", async () => {
+      const result = await readFile({
+        filePath: testFilePath,
+        location: {
+          startPosition: { line: 1, column: 10 },
+          linesToRead: 2,
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        const lines = result.data.split("\n");
+        expect(lines).toHaveLength(2);
+        expect(lines[0]).toBe("he first line of the example file.");
+        expect(lines[1]).toBe("This is the second line with some content.");
+      }
+    });
+
+    it("should handle linesToRead that exceeds file length", async () => {
+      const result = await readFile({
+        filePath: testFilePath,
+        location: {
+          startPosition: { line: 4, column: 1 },
+          linesToRead: 10,
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        const lines = result.data.split("\n");
+        expect(lines).toHaveLength(2);
+        expect(lines[0]).toBe(
+          "This is the fourth line with different content."
+        );
+        expect(lines[1]).toBe(
+          "This is the fifth and final line of the example file."
+        );
+      }
+    });
+
+    it("should prioritize endPosition over linesToRead when both are provided", async () => {
+      const result = await readFile({
+        filePath: testFilePath,
+        location: {
+          startPosition: { line: 1, column: 1 },
+          endPosition: { line: 2, column: 10 },
+          linesToRead: 5,
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        const lines = result.data.split("\n");
+        expect(lines).toHaveLength(2);
+        expect(lines[0]).toBe("This is the first line of the example file.");
+        expect(lines[1]).toBe("This is th");
+      }
+    });
   });
 
   describe("error cases", () => {
