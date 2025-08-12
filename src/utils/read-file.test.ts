@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { readFile, FileError } from "./files";
+import { readFile, FileError } from "./read-file";
 import { join } from "path";
 
 describe("readFile", () => {
