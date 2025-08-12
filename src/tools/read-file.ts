@@ -3,48 +3,24 @@ import { z } from "zod";
 import { readFile } from "../utils/read-file";
 
 const readFileTool = tool({
-  description:
-    "Reads the specified range of lines from the file. Instead of passing an end position, can pass a number of lines to read.",
+  description: "Reads the specified lines from the file.",
   inputSchema: z.object({
-    filePath: z.string().describe("The absolute path to the file to read."),
+    filePath: z.string().describe("Path to the file to read."),
     startPosition: z.object({
-      line: z.number().describe("The line number to start reading from."),
-      column: z.number().describe("The column number to start reading from."),
+      line: z.number().describe("Line to start reading from (1-indexed)."),
+      column: z.number().describe("Column to start reading from (0-indexed)."),
     }),
-    endPosition: z
-      .object({
-        line: z.number().describe("The line number to stop reading at."),
-        column: z.number().describe("The column number to stop reading at."),
-      })
-      .optional(),
-    linesToRead: z.number().describe("The number of lines to read.").optional(),
+    linesToRead: z
+      .number()
+      .describe("Number of lines to read (default: 30).")
+      .optional()
+      .default(30),
   }),
-  execute: async ({ filePath, startPosition, endPosition, linesToRead }) => {
-    if (endPosition && linesToRead) {
-      return {
-        success: false,
-        error: {
-          code: "WRONG_PARAMETERS",
-          message: "Can only pass one of endPosition or linesToRead",
-        },
-      };
-    }
-
-    if (!endPosition && !linesToRead) {
-      return {
-        success: false,
-        error: {
-          code: "WRONG_PARAMETERS",
-          message: "Must pass one of endPosition or linesToRead",
-        },
-      };
-    }
-
+  execute: async ({ filePath, startPosition, linesToRead }) => {
     const result = await readFile({
       filePath,
       location: {
         startPosition,
-        endPosition,
         linesToRead,
       },
     });

@@ -107,7 +107,7 @@ const onmessageLeadGeneratorCommand = runAgentCommand
       "--max-iterations <number>",
       "Max iterations per onmessage handler"
     )
-      .default(10)
+      .default(15)
       .argParser((value) => parseInt(value))
   )
   .addOption(

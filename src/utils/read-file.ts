@@ -26,8 +26,7 @@ type ReadFileParams = {
   filePath: string;
   location?: {
     startPosition: Position;
-    endPosition?: Position;
-    linesToRead?: number;
+    linesToRead: number;
   };
 };
 
@@ -47,8 +46,7 @@ const validatePosition = (
 const extractLocation = (
   content: string,
   startPosition: Position,
-  endPosition?: Position,
-  linesToRead?: number
+  linesToRead: number
 ): string => {
   const lines = content.split("\n").filter((line, index, array) => {
     if (index === array.length - 1 && line === "") {
@@ -57,68 +55,52 @@ const extractLocation = (
     return true;
   });
 
-  let actualEndPosition: Position;
+  const clampedStartPosition: Position = {
+    line: Math.max(1, Math.min(startPosition.line, lines.length)),
+    column: Math.max(1, startPosition.column),
+  };
 
-  if (endPosition) {
-    actualEndPosition = endPosition;
-  } else if (linesToRead) {
-    const endLine = Math.min(
-      startPosition.line + linesToRead - 1,
-      lines.length
-    );
-    const endLineContent = lines[endLine - 1];
-    actualEndPosition = {
-      line: endLine,
-      column: endLineContent ? endLineContent.length + 1 : 1,
-    };
-  } else {
-    const startLineContent = lines[startPosition.line - 1];
-    actualEndPosition = {
-      line: startPosition.line,
-      column: startLineContent ? startLineContent.length + 1 : 1,
-    };
-  }
+  const endLineTmp = Math.min(
+    clampedStartPosition.line + linesToRead - 1,
+    lines.length
+  );
+  const endLineContent = lines[endLineTmp - 1];
+  const actualEndPosition: Position = {
+    line: endLineTmp,
+    column: endLineContent ? endLineContent.length + 1 : 1,
+  };
 
-  if (
-    startPosition.line > actualEndPosition.line ||
-    (startPosition.line === actualEndPosition.line &&
-      startPosition.column > actualEndPosition.column)
-  ) {
-    throw new Error("Start position must be before end position");
-  }
-
-  const startLine = lines[startPosition.line - 1];
+  const startLine = lines[clampedStartPosition.line - 1];
   const endLine = lines[actualEndPosition.line - 1];
 
   if (!startLine || !endLine) {
-    throw new Error("Position out of bounds");
+    return "";
   }
 
-  if (
-    !validatePosition(startPosition, lines.length, startLine.length + 1) ||
-    !validatePosition(actualEndPosition, lines.length, endLine.length + 1)
-  ) {
-    throw new Error("Position out of bounds");
-  }
+  const clampedStartColumn = Math.min(
+    clampedStartPosition.column,
+    startLine.length + 1
+  );
+  const clampedEndColumn = Math.min(
+    actualEndPosition.column,
+    endLine.length + 1
+  );
 
-  if (startPosition.line === actualEndPosition.line) {
-    return startLine.substring(
-      startPosition.column - 1,
-      actualEndPosition.column
-    );
+  if (clampedStartPosition.line === actualEndPosition.line) {
+    return startLine.substring(clampedStartColumn - 1, clampedEndColumn);
   }
 
   const selectedLines = [];
-  selectedLines.push(startLine.substring(startPosition.column - 1));
+  selectedLines.push(startLine.substring(clampedStartColumn - 1));
 
-  for (let i = startPosition.line; i < actualEndPosition.line - 1; i++) {
+  for (let i = clampedStartPosition.line; i < actualEndPosition.line - 1; i++) {
     const line = lines[i];
     if (line !== undefined) {
       selectedLines.push(line);
     }
   }
 
-  selectedLines.push(endLine.substring(0, actualEndPosition.column));
+  selectedLines.push(endLine.substring(0, clampedEndColumn));
 
   return selectedLines.join("\n");
 };
@@ -158,7 +140,6 @@ export const readFile = async ({
       const extractedContent = extractLocation(
         content,
         location.startPosition,
-        location.endPosition,
         location.linesToRead
       );
       return { success: true, data: extractedContent };

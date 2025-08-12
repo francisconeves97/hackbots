@@ -99,24 +99,6 @@ const onMessageAgentWorker = async (
     text += chunk;
   }
 
-  const finishReason = await finishReasonPromise;
-
-  if (text === "") {
-    if (finishReason) {
-      return {
-        success: false,
-        error: "Agent stopped because it reached the max number of iterations",
-      };
-    }
-
-    if (finishReason === "error") {
-      return {
-        success: false,
-        error: "Agent stopped because it errored",
-      };
-    }
-  }
-
   try {
     const finding = JSON.parse(text);
     const parsedFinding = agentFindingSchema.parse(finding);

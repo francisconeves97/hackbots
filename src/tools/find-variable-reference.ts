@@ -4,30 +4,40 @@ import { findVariableReferenceByName } from "../utils/find-variable-reference";
 
 const findVariableReferenceByNameTool = tool({
   description:
-    "Returns the location and source code of where a variable was defined. This is a more robust approach than grepping for the variable name. You pass it a start and end position and the variable name you want to find the definition of, and it will return the definition of that variable.",
+    "Finds where a variable is defined using TypeScript's compiler API. Given a variable name and its usage location, returns the definition and surrounding code context.",
   inputSchema: z.object({
     filePath: z
       .string()
-      .describe("The absolute path to the file where the variable is defined."),
+      .describe("The absolute path to the file containing the variable usage."),
     variableName: z
       .string()
-      .describe("The name of the variable to find the definition of."),
+      .describe("The exact name of the variable to find the definition for."),
     startPosition: z.object({
       line: z
         .number()
-        .describe("Starting line number where the variable is being used."),
+        .describe(
+          "The line number where the variable usage begins (1-indexed)."
+        ),
       column: z
         .number()
-        .describe("Starting column number where the variable is being used."),
+        .describe(
+          "The column number where the variable usage begins (0-indexed)."
+        ),
     }),
     endPosition: z.object({
-      line: z.number().describe("Ending line number to stop reading at."),
-      column: z.number().describe("Ending column number to stop reading at."),
+      line: z
+        .number()
+        .describe("The line number where the variable usage ends (1-indexed)."),
+      column: z
+        .number()
+        .describe(
+          "The column number where the variable usage ends (0-indexed)."
+        ),
     }),
     linesToRead: z
       .number()
       .describe(
-        "The number of lines to read from the position where the variable was defined."
+        "The number of lines of context to include around the variable definition (default: 10)."
       )
       .default(10),
   }),
