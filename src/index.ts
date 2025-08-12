@@ -119,7 +119,7 @@ const main = async () => {
           agentContext: {
             filePath: args.filePath,
             maxIterations: parseInt(
-              Bun.env.ONMESSAGE_AGENT_MAX_ITERATIONS || "5"
+              Bun.env.ONMESSAGE_AGENT_MAX_ITERATIONS || "10"
             ),
           },
         };

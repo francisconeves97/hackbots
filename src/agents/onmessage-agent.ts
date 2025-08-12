@@ -29,8 +29,8 @@ type OnMessageFinding = {
 const onMessageAgentWorker = async (
   context: AgentContext<OnMessageAgentContext>,
   descriptor: DescriptorWithCodeLocation
-) => {
-  const { text } = await generateText({
+): Promise<AgentResult<AgentFinding>> => {
+  const { text, finishReason } = await generateText({
     model: context.model,
     prompt: `
             You're an expert security researcher specialized in analyzing client side JavaScript code.
@@ -44,8 +44,8 @@ const onMessageAgentWorker = async (
     
             Interesting onmessage listeners have the following characteristics:
             - They are NOT part of a generic polifyll or framework
-            - They are bound to the window object and are not a channel port
-            - They have no origin check or have an origin check that could be bypassed by a cross domain
+            - They are not sent through a generic MessageChannel port 
+            - They have no origin check or have an origin check that could be bypassed by a cross domain (e.g. using a regex)
             - They have interesting logic that could be used to exploit the application
             - If the passed data is not sanitized and is sent to a sink (e.g. window.location, or innerHTML) then they are SUPER interesting
           
@@ -59,7 +59,7 @@ const onMessageAgentWorker = async (
                 "reason": "Explanation why the finding is relevant. Should be concise and straight to the point."
               }
 
-              You shouldn't add any markdown formatting to the output.
+              IMPORTANT: You shouldn't add any markdown formatting to the output, ALWAYS output only a valid JSON object.
             </output>
             `,
     tools: {
@@ -73,9 +73,27 @@ const onMessageAgentWorker = async (
   });
 
   context.logger.debug(`Raw agent response: ${text}`);
+  if (text === "") {
+    if (finishReason === "stop") {
+      return {
+        success: false,
+        error: "Agent stopped because it reached the max number of iterations",
+      };
+    }
+
+    if (finishReason === "error") {
+      return {
+        success: false,
+        error: "Agent stopped because it errored",
+      };
+    }
+  }
   const finding = JSON.parse(text);
 
-  return agentFindingSchema.parse(finding);
+  return {
+    success: true,
+    data: agentFindingSchema.parse(finding),
+  };
 };
 
 const onMessageAgent = async (
@@ -93,13 +111,27 @@ const onMessageAgent = async (
 
   for (const descriptor of messageListenersResponse.data) {
     try {
+      context.logger.info(
+        `Agent analyzing onmessage listener on ${descriptor.value}. Filepath: ${context.agentContext.filePath}`
+      );
+
       const findingResponse = await onMessageAgentWorker(context, descriptor);
 
-      if (findingResponse.severity !== "none") {
-        findings.push({ descriptor, finding: findingResponse });
+      if (!findingResponse.success) {
+        context.logger.error(
+          `Error on onMessageAgentWorker: ${findingResponse.error}`
+        );
+        continue;
+      }
+
+      if (findingResponse.data.severity !== "none") {
+        findings.push({ descriptor, finding: findingResponse.data });
+        context.logger.info(
+          `Agent marked finding on ${descriptor.value} as ${findingResponse.data.severity}: ${findingResponse.data.reason}. Filepath: ${context.agentContext.filePath}`
+        );
       } else {
-        context.logger.debug(
-          `Agent marked finding on ${descriptor.value} as ${findingResponse.severity}: ${findingResponse.reason}`
+        context.logger.info(
+          `Agent marked finding on ${descriptor.value} as ${findingResponse.data.severity}: ${findingResponse.data.reason}`
         );
       }
     } catch (error) {
