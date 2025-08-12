@@ -2,7 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { getOnMessageListeners } from "../services/get-onmessage-listeners";
 
-const getOnmessageListeners = tool({
+const getOnmessageListenersTool = tool({
   description:
     "Gets the onmessage listeners found via static analysis for the given file",
   inputSchema: z.object({
@@ -17,4 +17,4 @@ const getOnmessageListeners = tool({
   },
 });
 
-export { getOnmessageListeners };
+export { getOnmessageListenersTool };
