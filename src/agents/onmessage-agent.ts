@@ -43,37 +43,55 @@ const onMessageAgentWorker = async (
   } = await streamText({
     model: context.model,
     prompt: `
-            You're an expert security researcher specialized in analyzing client side JavaScript code.
-          
-            Your task is to review onmessage listeners for potential XSS vulnerabilities or interesting gadgets.
-    
-            You are given a code location on a file and you have access to tools to read file contents, find variable references and grep for patterns.
-            You should use that to understand the logic of the onmessage listener. Finding variable references should be preferred as it's more precise.
-    
-            You SHOULD use the tools to understand the logic of the onmessage listener if you don't have that context.
-            IMPORTANT: Prefer to use the findVariableReferenceByNameTool instead of the grepFileTool, as it's more precise. only use grepFileTool as a fallback.
-    
-            Interesting onmessage listeners have the following characteristics:
-            - They are NOT part of a generic polifyll or framework
-            - They are not sent through a generic MessageChannel port 
-            - They have no origin check or have an origin check that could be bypassed by a cross domain (e.g. using a regex)
-            - If there's a function call right at the beginning of the onmessage listener, it's probably a origin check and you should investigate that function.
-            - They have interesting logic that could be used to exploit the application
-            - If the passed data is not sanitized and is sent to a sink (e.g. window.location, or innerHTML) then they are SUPER interesting
-          
-            Analyze the following onmessage listener:
-            ${JSON.stringify(descriptor, null, 2)}
-    
-            <output>
-              You should output a **only** a valid JSON object with the following schema:
-              {
-                "severity": "none" | "low" | "medium" | "high",
-                "reason": "Explanation why the finding is relevant. Should be concise and straight to the point."
-              }
+You are an expert security researcher specialized in analyzing client-side JavaScript code for XSS vulnerabilities and security gadgets.
 
-              IMPORTANT: You shouldn't add any markdown formatting to the output, ALWAYS output only a valid JSON object.
-            </output>
-            `,
+## TASK
+Review the provided onmessage listener for potential XSS vulnerabilities or interesting security gadgets.
+
+## TOOL USAGE STRATEGY
+You have access to three tools. Use them in this specific order:
+
+1. **findVariableReferenceByNameTool** (PREFERRED) - Use this FIRST to find variable definitions and references. This is more precise and efficient.
+2. **readFileTool** - Use to read specific file contents when you need to see the full context.
+3. **grepFileTool** (FALLBACK ONLY) - Only use this if findVariableReferenceByNameTool doesn't find what you need.
+
+## ANALYSIS APPROACH
+1. Start by using findVariableReferenceByNameTool to trace any variables, functions, or objects mentioned in the onmessage listener
+2. Read relevant file sections to understand the data flow and logic
+3. Look for security-relevant patterns in the code
+
+## SECURITY INDICATORS
+High-priority onmessage listeners typically have:
+- No origin validation or weak origin checks (regex-based checks that can be bypassed)
+- Direct use of message data without sanitization
+- Data flowing to dangerous sinks (innerHTML, outerHTML, document.write, eval, etc.)
+- Custom logic that processes untrusted input
+- Function calls at the beginning (likely origin checks - investigate these)
+
+Low-priority listeners (usually safe):
+- Generic polyfills or framework code
+- MessageChannel port usage
+- Third party libraries that are not used in the codebase
+
+## SEVERITY GUIDELINES
+- **high**: Direct XSS vector, unsanitized data to dangerous sinks
+- **medium**: Potential XSS with some mitigations, interesting gadget logic
+- **low**: Weak origin check, minor security concern
+- **none**: Properly secured, no security issues
+
+## TARGET
+Analyze this onmessage listener:
+${JSON.stringify(descriptor, null, 2)}
+
+## OUTPUT
+Output ONLY a valid JSON object:
+{
+  "severity": "none" | "low" | "medium" | "high",
+  "reason": "Concise explanation of the security finding"
+}
+
+Do not add any markdown formatting or additional text - only the JSON object.
+`,
     tools: {
       readFileTool,
       grepFileTool,
