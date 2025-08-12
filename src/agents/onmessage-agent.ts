@@ -1,4 +1,5 @@
 import { APICallError, stepCountIs, streamText } from "ai";
+import chalk from "chalk";
 import { z } from "zod";
 import { getJSFiles } from "../services/get-js-files";
 import { getOnMessageListeners } from "../services/get-onmessage-listeners";
@@ -8,6 +9,7 @@ import { findVariableReferenceByNameTool } from "../tools/find-variable-referenc
 import { grepFileTool } from "../tools/grep-file";
 import { readFileTool } from "../tools/read-file";
 import type { AgentContext } from "../types";
+import { formatFullStreamChunk } from "../utils/format-full-stream-chunk";
 import type { AgentResult } from "./types";
 
 export type OnMessageAgentContext = {
@@ -34,15 +36,11 @@ const onMessageAgentWorker = async (
   context: AgentContext<OnMessageAgentContext>,
   descriptor: DescriptorWithCodeLocation
 ): Promise<AgentResult<AgentFinding>> => {
-  context.logger.info("Starting onmessage listener analysis", {
-    agent: "onmessage",
-    filePath: descriptor.filePath,
-    descriptor: descriptor.value,
-    line: descriptor.startPosition.line,
-    column: descriptor.startPosition.column,
-  });
-
-  const { textStream, fullStream } = await streamText({
+  const {
+    textStream,
+    finishReason: finishReasonPromise,
+    fullStream,
+  } = await streamText({
     model: context.model,
     prompt: `
             You're an expert security researcher specialized in analyzing client side JavaScript code.
@@ -92,33 +90,19 @@ const onMessageAgentWorker = async (
   });
 
   let text = "";
-  let iterationCount = 0;
+
+  for await (const chunk of fullStream) {
+    context.logger.stdoutDebug(chalk.gray(formatFullStreamChunk(chunk)));
+  }
 
   for await (const chunk of textStream) {
     text += chunk;
-    iterationCount++;
-
-    if (iterationCount % 5 === 0) {
-      context.logger.debug("Agent iteration progress", {
-        agent: "onmessage",
-        filePath: descriptor.filePath,
-        descriptor: descriptor.value,
-        iteration: iterationCount,
-        maxIterations: context.agentContext.maxIterations,
-      });
-    }
   }
 
   const finishReason = await finishReasonPromise;
 
   if (text === "") {
     if (finishReason) {
-      context.logger.warn("Agent stopped due to max iterations reached", {
-        agent: "onmessage",
-        filePath: descriptor.filePath,
-        descriptor: descriptor.value,
-        maxIterations: context.agentContext.maxIterations,
-      });
       return {
         success: false,
         error: "Agent stopped because it reached the max number of iterations",
@@ -126,11 +110,6 @@ const onMessageAgentWorker = async (
     }
 
     if (finishReason === "error") {
-      context.logger.error("Agent stopped due to error", {
-        agent: "onmessage",
-        filePath: descriptor.filePath,
-        descriptor: descriptor.value,
-      });
       return {
         success: false,
         error: "Agent stopped because it errored",
@@ -142,12 +121,11 @@ const onMessageAgentWorker = async (
     const finding = JSON.parse(text);
     const parsedFinding = agentFindingSchema.parse(finding);
 
-    context.logger.info("Analysis completed successfully", {
+    context.logger.debug("Analysis completed successfully", {
       agent: "onmessage",
       filePath: descriptor.filePath,
       descriptor: descriptor.value,
       severity: parsedFinding.severity,
-      iterations: iterationCount,
     });
 
     return {
@@ -172,11 +150,6 @@ const onMessageAgentCheckFile = async (
   context: AgentContext<OnMessageAgentContext>,
   jsFile: string
 ): Promise<AgentResult<undefined>> => {
-  context.logger.subsection("Analyzing JavaScript file", {
-    agent: "onmessage",
-    jsFile,
-  });
-
   const messageListenersResponse = await getOnMessageListeners(jsFile);
 
   if (!messageListenersResponse.success) {
@@ -189,83 +162,85 @@ const onMessageAgentCheckFile = async (
   }
 
   const listeners = messageListenersResponse.data;
-  context.logger.info(`Found ${listeners.length} onmessage listeners`, {
-    agent: "onmessage",
-    jsFile,
-    listenerCount: listeners.length,
-  });
+
+  if (listeners.length > 0) {
+    context.logger.info(
+      chalk.blue(
+        `  📄 Found ${listeners.length} onmessage listener${
+          listeners.length > 1 ? "s" : ""
+        } in ${chalk.bold(jsFile)}`
+      )
+    );
+  } else {
+    return { success: true, data: undefined };
+  }
 
   const findings: OnMessageFinding[] = [];
   let processedCount = 0;
   let skippedCount = 0;
 
   for (const descriptor of listeners) {
-    if (
-      descriptor.filePath.includes("/optimized/") ||
-      descriptor.filePath.includes("sourcemaps/reversed")
-    ) {
-      context.logger.debug("Skipping optimized/sourcemap file", {
-        agent: "onmessage",
-        filePath: descriptor.filePath,
-        descriptor: descriptor.value,
-      });
-      skippedCount++;
-      continue;
-    }
-
     try {
-      context.logger.info("Analyzing onmessage listener", {
-        agent: "onmessage",
-        filePath: descriptor.filePath,
-        descriptor: descriptor.value,
-        line: descriptor.startPosition.line,
-        column: descriptor.startPosition.column,
-      });
+      context.logger.info(chalk.gray("─".repeat(60)));
+
+      context.logger.debug(
+        `\nAnalyzing onmessage listener on ${descriptor.filePath}\n${descriptor.value}`
+      );
 
       const findingResponse = await onMessageAgentWorker(context, descriptor);
 
       if (!findingResponse.success) {
-        context.logger.error("Agent worker failed", {
-          agent: "onmessage",
-          filePath: descriptor.filePath,
-          descriptor: descriptor.value,
-          error: findingResponse.error,
-        });
+        context.logger.error(
+          `Agent worker failed to process ${descriptor.filePath}: ${findingResponse.error}`
+        );
         continue;
       }
 
       if (findingResponse.data.severity !== "none") {
         findings.push({ descriptor, finding: findingResponse.data });
-        context.logger.finding(
-          findingResponse.data.severity as "low" | "medium" | "high",
-          findingResponse.data.reason,
-          {
-            agent: "onmessage",
-            filePath: descriptor.filePath,
-            descriptor: descriptor.value,
-            line: descriptor.startPosition.line,
-            column: descriptor.startPosition.column,
-          }
+
+        // Display finding with appropriate styling
+        const severityColors = {
+          high: chalk.red,
+          medium: chalk.yellow,
+          low: chalk.blue,
+        };
+
+        const severityIcons = {
+          high: "🚨",
+          medium: "⚠️",
+          low: "💡",
+        };
+
+        const color =
+          severityColors[
+            findingResponse.data.severity as keyof typeof severityColors
+          ];
+        const icon =
+          severityIcons[
+            findingResponse.data.severity as keyof typeof severityIcons
+          ];
+
+        context.logger.info(
+          chalk.gray("    └─ ") +
+            color(
+              `${icon} ${findingResponse.data.severity.toUpperCase()}: ${
+                findingResponse.data.reason
+              }`
+            )
+        );
+        context.logger.info(
+          chalk.gray(
+            `        📍 ${descriptor.filePath}:${descriptor.startPosition.line}:${descriptor.startPosition.column}`
+          )
         );
       } else {
-        context.logger.info("No security issues found", {
-          agent: "onmessage",
-          filePath: descriptor.filePath,
-          descriptor: descriptor.value,
-          severity: findingResponse.data.severity,
-        });
+        context.logger.debug("No security issues found for this descriptor");
       }
 
+      context.logger.info(chalk.gray("─".repeat(60)));
+
       processedCount++;
-      context.logger.progress(
-        processedCount,
-        listeners.length,
-        "Processing listeners",
-        {
-          agent: "onmessage",
-          jsFile,
-        }
-      );
     } catch (error) {
       if (APICallError.isInstance(error)) {
         context.logger.error("API call error in agent worker", {
@@ -286,13 +261,15 @@ const onMessageAgentCheckFile = async (
     }
   }
 
-  context.logger.success("File analysis completed", {
-    agent: "onmessage",
-    jsFile,
-    processed: processedCount,
-    skipped: skippedCount,
-    findings: findings.length,
-  });
+  if (findings.length > 0) {
+    context.logger.info(
+      chalk.green(
+        `  ✅ File analysis completed with ${findings.length} finding${
+          findings.length > 1 ? "s" : ""
+        }`
+      )
+    );
+  }
 
   return { success: true, data: undefined };
 };
@@ -300,52 +277,50 @@ const onMessageAgentCheckFile = async (
 const onMessageAgent = async (
   context: AgentContext<OnMessageAgentContext>
 ): Promise<AgentResult<undefined>> => {
-  context.logger.section("OnMessage Agent Analysis", {
-    agent: "onmessage",
-    maxIterations: context.agentContext.maxIterations,
-    checkSourcemaps: context.agentContext.checkSourcemaps,
-  });
+  context.logger.info(
+    chalk.bold("🔍 Starting onmessage lead generator agent...\n")
+  );
 
   let routesToCheck: string[] = [];
 
   if (context.agentContext.htmlRouteFilePaths.length > 0) {
     routesToCheck = context.agentContext.htmlRouteFilePaths;
-    context.logger.info("Using provided HTML route file paths", {
-      agent: "onmessage",
-      routeCount: routesToCheck.length,
-    });
+    context.logger.info(
+      `📋 Using ${routesToCheck.length} provided route${
+        routesToCheck.length > 1 ? "s" : ""
+      }`
+    );
   } else {
-    context.logger.info("Discovering routes automatically");
+    context.logger.info("🔍 Getting routes from jxscout...");
     const getRoutesResponse = await getRoutes();
     if (!getRoutesResponse.success) {
-      context.logger.error("Failed to get routes", {
-        agent: "onmessage",
-        error: getRoutesResponse.error,
-      });
+      context.logger.error(
+        `❌ Failed to discover routes: ${getRoutesResponse.error}`
+      );
       return { success: false, error: getRoutesResponse.error };
     }
     routesToCheck = getRoutesResponse.data;
-    context.logger.info("Routes discovered", {
-      agent: "onmessage",
-      routeCount: routesToCheck.length,
-    });
+    context.logger.info(
+      `📋 Found ${routesToCheck.length} route${
+        routesToCheck.length > 1 ? "s" : ""
+      } to analyze`
+    );
   }
 
   let totalFilesProcessed = 0;
   let totalFilesFailed = 0;
-  let totalFindings = 0;
+
+  context.logger.info("\n🚀 Starting analysis...\n");
 
   for (let routeIndex = 0; routeIndex < routesToCheck.length; routeIndex++) {
     const route = routesToCheck[routeIndex];
 
-    context.logger.subsection(
-      `Processing route ${routeIndex + 1}/${routesToCheck.length}`,
-      {
-        agent: "onmessage",
-        route,
-        routeIndex: routeIndex + 1,
-        totalRoutes: routesToCheck.length,
-      }
+    context.logger.info(
+      chalk.cyan(
+        `📂 Processing route ${routeIndex + 1}/${
+          routesToCheck.length
+        }: ${chalk.bold(route)}`
+      )
     );
 
     const jsFilesToCheckResponse = await getJSFiles({
@@ -355,62 +330,58 @@ const onMessageAgent = async (
     });
 
     if (!jsFilesToCheckResponse.success) {
-      context.logger.error("Failed to get JS files for route", {
-        agent: "onmessage",
-        route,
-        error: jsFilesToCheckResponse.error,
-      });
+      context.logger.error(
+        `  ❌ Failed to get JS files for route: ${jsFilesToCheckResponse.error}`
+      );
       totalFilesFailed++;
       continue;
     }
 
     const jsFiles = jsFilesToCheckResponse.data;
-    context.logger.info(`Found ${jsFiles.length} JavaScript files for route`, {
-      agent: "onmessage",
-      route,
-      jsFileCount: jsFiles.length,
-    });
+
+    if (jsFiles.length > 0) {
+      context.logger.info(
+        `  📄 Found ${jsFiles.length} JavaScript file${
+          jsFiles.length > 1 ? "s" : ""
+        }`
+      );
+    } else {
+      context.logger.info(chalk.gray(`  📄 No JavaScript files found`));
+    }
 
     for (let fileIndex = 0; fileIndex < jsFiles.length; fileIndex++) {
       const jsFile = jsFiles[fileIndex];
 
       try {
-        context.logger.progress(
-          fileIndex + 1,
-          jsFiles.length,
-          `Processing file ${fileIndex + 1}/${jsFiles.length}`,
-          {
-            agent: "onmessage",
-            route,
-            jsFile,
-          }
-        );
-
         await onMessageAgentCheckFile(context, jsFile!);
         totalFilesProcessed++;
       } catch (error) {
-        context.logger.error("Failed to check file", {
-          agent: "onmessage",
-          route,
-          jsFile,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        context.logger.error(
+          `  ❌ Failed to check file ${jsFile}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
         totalFilesFailed++;
       }
     }
   }
 
-  context.logger.section("Analysis Summary", {
-    agent: "onmessage",
-  });
+  context.logger.info(chalk.gray("\n" + "─".repeat(60)));
+  context.logger.info(chalk.bold("📊 Analysis Summary"));
+  context.logger.info(chalk.gray("─".repeat(60)));
+  context.logger.info(`  📂 Routes processed: ${routesToCheck.length}`);
+  context.logger.info(`  📄 Files processed: ${totalFilesProcessed}`);
+  if (totalFilesFailed > 0) {
+    context.logger.warn(`  ⚠️  Files failed: ${totalFilesFailed}`);
+  }
+  context.logger.info(
+    chalk.green(`  ✅ Total files: ${totalFilesProcessed + totalFilesFailed}`)
+  );
+  context.logger.info(chalk.gray("─".repeat(60)));
 
-  context.logger.success("OnMessage agent analysis completed", {
-    agent: "onmessage",
-    routesProcessed: routesToCheck.length,
-    filesProcessed: totalFilesProcessed,
-    filesFailed: totalFilesFailed,
-    totalFiles: totalFilesProcessed + totalFilesFailed,
-  });
+  context.logger.info(
+    chalk.bold.green("\n🎉 OnMessage agent analysis completed!\n")
+  );
 
   return { success: true, data: undefined };
 };

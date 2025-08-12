@@ -1,3 +1,5 @@
+import chalk from "chalk";
+
 export type LogLevel = "none" | "debug" | "info" | "warn" | "error";
 
 const getLogLevelPriority = (level: LogLevel): number => {
@@ -27,24 +29,29 @@ export const logger = (level: LogLevel) => {
   };
 
   return {
+    stdoutDebug: (message: string) => {
+      if (shouldLog("debug")) {
+        process.stdout.write(message);
+      }
+    },
     debug: (message: string, ...args: any[]) => {
       if (shouldLog("debug")) {
-        console.log(`[DEBUG] ${message}`, ...args);
+        console.log(chalk.gray(message), ...args);
       }
     },
     info: (message: string, ...args: any[]) => {
       if (shouldLog("info")) {
-        console.log(`[INFO] ${message}`, ...args);
+        console.log(chalk.blue(message), ...args);
       }
     },
     warn: (message: string, ...args: any[]) => {
       if (shouldLog("warn")) {
-        console.warn(`[WARN] ${message}`, ...args);
+        console.warn(chalk.yellow(message), ...args);
       }
     },
     error: (message: string, ...args: any[]) => {
       if (shouldLog("error")) {
-        console.error(`[ERROR] ${message}`, ...args);
+        console.error(chalk.red(message), ...args);
       }
     },
   };
