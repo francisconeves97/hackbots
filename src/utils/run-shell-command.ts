@@ -1,4 +1,4 @@
-const runCLI = async (cmd: string[]) => {
+const runShellCommand = async (cmd: string[]) => {
   const child = Bun.spawn({
     cmd,
     stdout: "pipe",
@@ -17,4 +17,4 @@ const runCLI = async (cmd: string[]) => {
   };
 };
 
-export { runCLI };
+export { runShellCommand };

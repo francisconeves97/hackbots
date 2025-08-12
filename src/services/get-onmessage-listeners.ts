@@ -1,12 +1,10 @@
-import { tool } from "ai";
-import { z } from "zod";
-import { runCLI } from "../lib/run-cli";
+import { runShellCommand } from "../utils/run-shell-command";
 import type { DescriptorWithCodeLocation, ServiceResult } from "./types";
 
 const getOnMessageListeners = async (
   filePath: string
 ): Promise<ServiceResult<DescriptorWithCodeLocation[]>> => {
-  const { stdout, stderr, exitCode } = await runCLI([
+  const { stdout, stderr, exitCode } = await runShellCommand([
     "jxscout",
     "-c",
     "descriptors",

@@ -12,13 +12,13 @@ it("should get the onmessage listeners for a file that doesnt exist", async () =
   }
 });
 
-it("should get the onmessage listeners for a file that exists", async () => {
-  const result = await getOnMessageListeners(
-    "/Users/francisconeves/jxscout/mercadolibre/original/www.mercadolivre.com.br/minha-pagina/editor/(index).html"
-  );
+// it("should get the onmessage listeners for a file that exists", async () => {
+//   const result = await getOnMessageListeners(
+//     "/Users/francisconeves/jxscout/mercadolibre/original/www.mercadolivre.com.br/minha-pagina/editor/(index).html"
+//   );
 
-  expect(result.success).toBe(true);
-  if (result.success) {
-    expect(result.data.length).toBeGreaterThan(0);
-  }
-});
+//   expect(result.success).toBe(true);
+//   if (result.success) {
+//     expect(result.data.length).toBeGreaterThan(0);
+//   }
+// });
