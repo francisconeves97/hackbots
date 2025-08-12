@@ -18,12 +18,35 @@ export interface PositionRange {
   endPosition: Position;
 }
 
+export interface VariableReferenceWithContent {
+  file: string;
+  content: string;
+  startPosition: Position;
+  endPosition: Position;
+}
+
+export interface FindVariableReferenceWithContentResult {
+  success: boolean;
+  data?: VariableReferenceWithContent;
+  error?: string;
+}
+
+const MAX_LINES_TO_READ = 2000 as const;
+
 export function findVariableReferenceByName(
   filePath: string,
   positionRange: PositionRange,
-  variableName: string
-): FindVariableReferenceResult {
+  variableName: string,
+  linesToRead: number = 10
+): FindVariableReferenceWithContentResult {
   try {
+    if (linesToRead > MAX_LINES_TO_READ) {
+      return {
+        success: false,
+        error: `Lines to read (${linesToRead}) exceeds maximum allowed (${MAX_LINES_TO_READ})`,
+      };
+    }
+
     const program = ts.createProgram([filePath], {});
     const sourceFile = program.getSourceFile(filePath);
     if (!sourceFile) {
@@ -121,12 +144,33 @@ export function findVariableReferenceByName(
       };
     }
 
+    const fileContent = sourceFile.getFullText();
+    const lines = fileContent.split("\n");
+    const referenceLine = declPos.line + 1;
+
+    const startLine = Math.max(1, referenceLine - Math.floor(linesToRead / 2));
+    const endLine = Math.min(lines.length, startLine + linesToRead - 1);
+
+    const contentLines = lines.slice(startLine - 1, endLine);
+    const content = contentLines.join("\n");
+
+    const startPosition: Position = {
+      line: startLine,
+      column: 0,
+    };
+
+    const endPosition: Position = {
+      line: endLine,
+      column: lines[endLine - 1]?.length || 0,
+    };
+
     return {
       success: true,
       data: {
         file: declFile,
-        line: declPos.line + 1,
-        character: declPos.character,
+        content,
+        startPosition,
+        endPosition,
       },
     };
   } catch (error) {
