@@ -63,7 +63,7 @@ const parseAndValidateCLIArgs = (): CLIArgs => {
       },
       model: {
         type: "string",
-        default: "openai/gpt-oss-20b",
+        default: "gpt-oss:20b",
       },
       agent: {
         type: "string",
@@ -107,6 +107,7 @@ const main = async () => {
 
     const context: AgentContext = {
       telemetryEnabled: args.enableTelemetry,
+      sessionID: crypto.randomUUID(),
       model,
       logger: logger(args.logLevel),
       agentContext: undefined,

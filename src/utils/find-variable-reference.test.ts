@@ -92,4 +92,32 @@ describe("findVariableReferenceByName", () => {
       "Variable 'asdijaisdj' not found in the specified range"
     );
   });
+
+  // it("should find variable reference by name", () => {
+  //   const result = findVariableReferenceByName(
+  //     "/Users/francisconeves/jxscout/mercadolibre/optimized/http2.mlstatic.com/frontend-assets/mshops-web-myml-editor/913.50e9898d.js",
+  //     {
+  //       startPosition: { line: 4196, column: 237 },
+  //       endPosition: { line: 4196, column: 276 },
+  //     },
+  //     "C",
+  //     20
+  //   );
+
+  //   expect(result.success).toBe(true);
+  // });
+
+  // it("should find variable reference by name", () => {
+  //   const result = findVariableReferenceByName(
+  //     "/Users/francisconeves/jxscout/mercadolibre/original/http2.mlstatic.com/frontend-assets/mshops-web-myml-editor/index.ca7a103a.js",
+  //     {
+  //       startPosition: { line: 46666, column: 466 },
+  //       endPosition: { line: 46666, column: 21 },
+  //     },
+  //     "ue",
+  //     20
+  //   );
+
+  //   expect(result.success).toBe(true);
+  // });
 });

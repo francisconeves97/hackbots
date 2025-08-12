@@ -47,7 +47,15 @@ export function findVariableReferenceByName(
       };
     }
 
-    const program = ts.createProgram([filePath], {});
+    const program = ts.createProgram([filePath], {
+      target: ts.ScriptTarget.Latest,
+      module: ts.ModuleKind.None,
+      allowJs: true,
+      checkJs: false,
+      noEmit: true,
+      skipLibCheck: true,
+      isolatedModules: true,
+    });
     const sourceFile = program.getSourceFile(filePath);
     if (!sourceFile) {
       return {
@@ -64,13 +72,13 @@ export function findVariableReferenceByName(
     try {
       startPos = ts.getPositionOfLineAndCharacter(
         sourceFile,
-        positionRange.startPosition.line - 1,
-        positionRange.startPosition.column
+        Math.max(0, positionRange.startPosition.line - 2),
+        0 // give some range
       );
       endPos = ts.getPositionOfLineAndCharacter(
         sourceFile,
-        positionRange.endPosition.line - 1,
-        positionRange.endPosition.column
+        positionRange.endPosition.line,
+        0
       );
     } catch (error) {
       return {

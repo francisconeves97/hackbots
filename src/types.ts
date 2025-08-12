@@ -17,6 +17,7 @@ export type GrepMatch = {
 
 export type AgentContext<AgentSpecificContext = undefined> = {
   telemetryEnabled: boolean;
+  sessionID: string;
   model: LanguageModel;
   logger: Logger;
   agentContext: AgentSpecificContext;

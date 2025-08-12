@@ -1,7 +1,8 @@
-import { APICallError, generateText, stepCountIs } from "ai";
+import { APICallError, stepCountIs, streamText } from "ai";
 import { z } from "zod";
 import { getOnMessageListeners } from "../services/get-onmessage-listeners";
 import type { DescriptorWithCodeLocation } from "../services/types";
+import { findVariableReferenceByNameTool } from "../tools/find-variable-reference";
 import { grepFileTool } from "../tools/grep-file";
 import { readFileTool } from "../tools/read-file";
 import type { AgentContext } from "../types";
@@ -30,22 +31,24 @@ const onMessageAgentWorker = async (
   context: AgentContext<OnMessageAgentContext>,
   descriptor: DescriptorWithCodeLocation
 ): Promise<AgentResult<AgentFinding>> => {
-  const { text, finishReason } = await generateText({
+  const { textStream, finishReason: finishReasonPromise } = await streamText({
     model: context.model,
     prompt: `
             You're an expert security researcher specialized in analyzing client side JavaScript code.
           
             Your task is to review onmessage listeners for potential XSS vulnerabilities or interesting gadgets.
     
-            You are given a code location on a file and you have access to tools to read file contents and grep for patterns.
-            You should use that to understand the logic of the onmessage listener.
+            You are given a code location on a file and you have access to tools to read file contents, find variable references and grep for patterns.
+            You should use that to understand the logic of the onmessage listener. Finding variable references should be preferred as it's more precise.
     
             You SHOULD use the tools to understand the logic of the onmessage listener if you don't have that context.
+            IMPORTANT: Prefer to use the findVariableReferenceByNameTool instead of the grepFileTool, as it's more precise. only use grepFileTool as a fallback.
     
             Interesting onmessage listeners have the following characteristics:
             - They are NOT part of a generic polifyll or framework
             - They are not sent through a generic MessageChannel port 
             - They have no origin check or have an origin check that could be bypassed by a cross domain (e.g. using a regex)
+            - If there's a function call right at the beginning of the onmessage listener, it's probably a origin check and you should investigate that function.
             - They have interesting logic that could be used to exploit the application
             - If the passed data is not sanitized and is sent to a sink (e.g. window.location, or innerHTML) then they are SUPER interesting
           
@@ -65,16 +68,28 @@ const onMessageAgentWorker = async (
     tools: {
       readFileTool,
       grepFileTool,
+      findVariableReferenceByNameTool,
     },
     experimental_telemetry: {
       isEnabled: context.telemetryEnabled,
+      metadata: {
+        sessionId: context.sessionID,
+      },
     },
+
     stopWhen: stepCountIs(context.agentContext.maxIterations),
   });
 
-  context.logger.debug(`Raw agent response: ${text}`);
+  let text = "";
+  for await (const chunk of textStream) {
+    text += chunk;
+    process.stdout.write(chunk);
+  }
+
+  const finishReason = await finishReasonPromise;
+
   if (text === "") {
-    if (finishReason === "stop") {
+    if (finishReason) {
       return {
         success: false,
         error: "Agent stopped because it reached the max number of iterations",
@@ -110,9 +125,19 @@ const onMessageAgent = async (
   const findings: OnMessageFinding[] = [];
 
   for (const descriptor of messageListenersResponse.data) {
+    if (
+      descriptor.filePath.includes("/optimized/") ||
+      descriptor.filePath.includes("sourcemaps/reversed")
+    ) {
+      // TODO: add a more robust way of deduplication.
+      // also sourcemaps have lots of potential where we could include all sources
+      // but that would need more work
+      continue;
+    }
+
     try {
       context.logger.info(
-        `Agent analyzing onmessage listener on ${descriptor.value}. Filepath: ${context.agentContext.filePath}`
+        `Agent analyzing onmessage listener on ${descriptor.value}. Filepath: ${descriptor.filePath}`
       );
 
       const findingResponse = await onMessageAgentWorker(context, descriptor);
@@ -127,7 +152,7 @@ const onMessageAgent = async (
       if (findingResponse.data.severity !== "none") {
         findings.push({ descriptor, finding: findingResponse.data });
         context.logger.info(
-          `Agent marked finding on ${descriptor.value} as ${findingResponse.data.severity}: ${findingResponse.data.reason}. Filepath: ${context.agentContext.filePath}`
+          `[FINDING!!!] Agent marked finding on ${descriptor.value} as ${findingResponse.data.severity}: ${findingResponse.data.reason}. Filepath: ${descriptor.filePath}`
         );
       } else {
         context.logger.info(
