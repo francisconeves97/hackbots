@@ -1,5 +1,5 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText, stepCountIs, streamText } from "ai";
+import { stepCountIs, streamText } from "ai";
 import { parseArgs } from "util";
 import { getOnmessageListeners } from "./tools/get-onmessage-listeners";
 

@@ -1,0 +1,5 @@
+This is the first line of the example file.
+This is the second line with some content.
+This is the third line that contains more text.
+This is the fourth line with different content.
+This is the fifth and final line of the example file.

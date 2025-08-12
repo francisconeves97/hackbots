@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { runCLI } from "../lib/run-cli";
+import { getOnMessageListeners } from "../services/get-onmessage-listeners";
 
 const getOnmessageListeners = tool({
   description:
@@ -13,28 +13,7 @@ const getOnmessageListeners = tool({
       ),
   }),
   execute: async ({ filePath }) => {
-    const { stdout, stderr, exitCode } = await runCLI([
-      "jxscout",
-      "-c",
-      "descriptors",
-      "--descriptor-types",
-      "onmessage-listeners",
-      "--file-paths",
-      filePath,
-      "--include-code-location",
-    ]);
-
-    if (exitCode !== 0) {
-      return {
-        success: false,
-        error: stderr,
-      };
-    }
-
-    return {
-      success: true,
-      onmessageListeners: stdout.split("\n"),
-    };
+    return await getOnMessageListeners(filePath);
   },
 });
 
